@@ -1,0 +1,20 @@
+[package]
+name = "uac-bypass-uiaccess"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+members = ["injector", "payload"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"
+trim-paths = ["diagnostics", "object"]
+
+[dependencies]
+ntapi = "0.4.3"
+winapi = "0.3.9"
+windows = { version = "0.62.2", features = ["Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

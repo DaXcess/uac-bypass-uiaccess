@@ -107,6 +107,9 @@ fn main() -> io::Result<()> {
         }
     };
 
+    // Wait a bit to make sure the injector has set its hooks
+    std::thread::sleep(Duration::from_millis(250));
+
     // Start scheduled task with maximum privileges
     let task_manager = match TaskManager::new() {
         Ok(manager) => manager,

@@ -1,3 +1,16 @@
+//! Helper module that allows lazily enumerating Windows processes
+//!
+//! # Example
+//!
+//! ```
+//! // Prints each process ID to the screen
+//! let processes = EnumProcesses::new().unwrap();
+//!
+//! for process_entry in processes {
+//!     println!("Process ID: {}", process_entry.th32ProcessID);
+//! }
+//! ```
+
 use std::io;
 
 use windows::Win32::{
@@ -7,12 +20,12 @@ use windows::Win32::{
     },
 };
 
-pub struct EnumProcesses {
+pub struct EnumProcess {
     snapshot: HANDLE,
     current: Option<PROCESSENTRY32>,
 }
 
-impl EnumProcesses {
+impl EnumProcess {
     pub fn new() -> io::Result<Self> {
         let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)? };
 
@@ -44,7 +57,7 @@ impl EnumProcesses {
     }
 }
 
-impl Iterator for EnumProcesses {
+impl Iterator for EnumProcess {
     type Item = PROCESSENTRY32;
 
     fn next(&mut self) -> Option<Self::Item> {

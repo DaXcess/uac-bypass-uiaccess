@@ -1,5 +1,7 @@
 use std::{env, fs, path::PathBuf, process::Command};
 
+// Build injector and payload binaries to embed them in the final application
+
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

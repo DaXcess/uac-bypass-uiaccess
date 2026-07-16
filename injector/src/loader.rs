@@ -1,3 +1,8 @@
+//! Helper module that both loads a Windows module and immediately attempts to resolve
+//! the required `windows_hook_proc` function.
+//!
+//! The module will be unloaded when [`LoadedModule`] is dropped
+
 use std::{
     io::{self, Error, ErrorKind},
     os::windows::ffi::OsStrExt,

@@ -1,3 +1,17 @@
+//! Helper module that allows lazily enumerating process threads
+//!
+//! # Example
+//!
+//! ```
+//! // Prints each thread ID to the screen
+//! let process_id = 12345;
+//! let threads = EnumThreads::new(process_id).unwrap();
+//!
+//! for thread_entry in threads {
+//!     println!("Thread ID: {}", thread_entry.th32ThreadID);
+//! }
+//! ```
+
 use std::io;
 
 use windows::Win32::{
@@ -19,6 +33,9 @@ impl EnumThreads {
         let mut entry = THREADENTRY32::default();
         entry.dwSize = size_of_val(&entry) as _;
 
+        // Since we are required to call `Thread32First` to start snapsnot enumeration,
+        // we store the entry for later use
+
         unsafe {
             Thread32First(snapshot, &mut entry)?;
         }
@@ -30,6 +47,9 @@ impl EnumThreads {
     }
 
     pub fn next_thread(&mut self) -> Option<THREADENTRY32> {
+        // Because we had to call `Thread32First`, we take the current value and
+        // replace it with a new entry if one is available, returning the "old" value
+
         let result = self.current.take();
         let mut entry = THREADENTRY32::default();
         entry.dwSize = size_of_val(&entry) as _;

@@ -55,13 +55,11 @@ pub extern "system" fn DllMain(_module: HMODULE, reason: u32, _reserved: *mut u8
         let filename = PathFindFileNameA(PCSTR(path.as_ptr()));
         let filename_c = CStr::from_ptr(filename.as_ptr() as _);
 
-        let is_taskhost = filename_c
-            .to_string_lossy()
-            .eq_ignore_ascii_case("taskhostw.exe");
-        let is_elevated = is_elevated().unwrap_or(false);
+        if filename_c != c"taskhostw.exe" {
+            return false;
+        }
 
-        // Not the target process
-        if !is_taskhost || !is_elevated {
+        if !is_elevated().unwrap_or(false) {
             return false;
         }
 

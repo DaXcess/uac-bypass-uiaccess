@@ -73,10 +73,7 @@ fn main() {
             let proc_name = unsafe { CStr::from_ptr(proc.szExeFile.as_ptr()) };
 
             // Elevation checks are performed by the payload, so we just target all taskhostw processes here
-            proc_name
-                .to_string_lossy()
-                .eq_ignore_ascii_case("taskhostw.exe")
-                .then_some(proc.th32ProcessID)
+            (proc_name == c"taskhostw.exe").then_some(proc.th32ProcessID)
         })
         .collect::<Vec<u32>>();
 

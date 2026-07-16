@@ -14,7 +14,7 @@ use windows::{
         Foundation::{FreeLibrary, HINSTANCE, HMODULE},
         System::LibraryLoader::{GetProcAddress, LoadLibraryW},
     },
-    core::{PCSTR, PCWSTR},
+    core::{PCWSTR, s},
 };
 
 pub struct LoadedModule {
@@ -58,7 +58,7 @@ pub fn load_module<P: AsRef<Path>>(path: P) -> io::Result<LoadedModule> {
 
     let module = unsafe { LoadLibraryW(PCWSTR(path_w.as_ptr()))? };
     let proc = unsafe {
-        GetProcAddress(module, PCSTR(b"windows_hook_proc\0".as_ptr())).ok_or_else(|| {
+        GetProcAddress(module, s!("windows_hook_proc")).ok_or_else(|| {
             Error::new(ErrorKind::NotFound, "procedure not found in loaded module")
         })?
     };

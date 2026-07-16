@@ -17,12 +17,9 @@ use windows::{
                 OpenProcessToken, PROCESS_INFORMATION, STARTUPINFOA, SetEvent, TIMER_MODIFY_STATE,
             },
         },
-        UI::{
-            Shell::PathFindFileNameA,
-            WindowsAndMessaging::{CallNextHookEx, MSG, UnhookWindowsHookEx},
-        },
+        UI::{Shell::PathFindFileNameA, WindowsAndMessaging::CallNextHookEx},
     },
-    core::{PCSTR, PSTR, s},
+    core::{PCSTR, s},
 };
 
 const DLL_PROCESS_ATTACH: u32 = 1;
@@ -39,9 +36,7 @@ pub extern "system" fn DllMain(_module: HMODULE, reason: u32, _reserved: *mut u8
             return false;
         };
 
-        if let Some(is_injector_proc) =
-            GetProcAddress(main_module, PCSTR(b"is_injector\0".as_ptr()))
-        {
+        if let Some(is_injector_proc) = GetProcAddress(main_module, s!("is_injector")) {
             let result = is_injector_proc();
             if result > 0 {
                 return true;
@@ -86,8 +81,8 @@ pub extern "system" fn DllMain(_module: HMODULE, reason: u32, _reserved: *mut u8
         si.cb = size_of_val(&si) as _;
 
         if CreateProcessA(
-            PCSTR::null(),
-            Some(PSTR(b"cmd.exe\0".as_ptr() as _)),
+            s!("cmd.exe"),
+            None,
             None,
             None,
             false,

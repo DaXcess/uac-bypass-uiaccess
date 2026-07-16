@@ -28,7 +28,7 @@ use windows::{
             WindowsAndMessaging::SW_HIDE,
         },
     },
-    core::PCSTR,
+    core::{PCSTR, s},
 };
 
 use crate::task_scheduler::TaskManager;
@@ -141,7 +141,7 @@ fn execute_injector(injector_path: &str, payload_path: &str) -> io::Result<HANDL
         let mut info = SHELLEXECUTEINFOA::default();
         info.cbSize = size_of_val(&info) as _;
         info.lpFile = PCSTR(injector_path_c.as_ptr() as _);
-        info.lpVerb = PCSTR(b"open\0".as_ptr());
+        info.lpVerb = s!("open");
         info.lpParameters = PCSTR(params_c.as_ptr() as _);
         info.nShow = SW_HIDE.0;
         info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NO_CONSOLE;
